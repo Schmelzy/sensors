@@ -4,14 +4,8 @@ import time
 import spidev
 import RPi.GPIO as GPIO
 import smbus
-
-BH1750_ADDR = 0x23
-CMD_READ = 0x10
-
-HTU21D_ADDR = 0x40
-CMD_READ_TEMP = 0xE3
-CMD_READ_HUM = 0xE5
-CMD_RESET = 0xFE
+from bh1750 import BH1750
+from htu21d import HTU21D
 
 # Pin 15 on Raspberry Pi corresponds to GPIO 22
 LED1 = 15
@@ -31,34 +25,6 @@ GPIO.setwarnings(False)
 # set up GPIO output channels for LEDs
 GPIO.setup(LED1, GPIO.OUT)
 GPIO.setup(LED2, GPIO.OUT)
-
-class BH1750(object):
-    def __init__(self):
-        # Rev 2 of Raspberry Pi and all newer use bus 1
-        self.bus = smbus.SMBus(1)
-
-    def light(self):
-        data = self.bus.read_i2c_block_data(BH1750_ADDR, CMD_READ)
-        result = (data[1] + (256 * data[0])) / 1.2
-        return format(result, '.0f')
-
-class HTU21D(object):
-    def __init__(self):
-        # Rev 2 of Raspberry Pi and all newer use bus 1
-        self.bus = smbus.SMBus(1)
-
-    def reset(self):
-        self.bus.write_byte(HTU21D_ADDR, CMD_RESET)
-
-    def temperature(self):
-        self.reset()
-        msb, lsb, crc = self.bus.read_i2c_block_data(HTU21D_ADDR, CMD_READ_TEMP, 3)
-        return -46.85 + 175.72 * (msb * 256 + lsb) / 65536
-
-    def humidity(self):
-        self.reset()
-        msb, lsb, crc = self.bus.read_i2c_block_data(HTU21D_ADDR, CMD_READ_HUM, 3)
-        return -6 + 125 * (msb * 256 + lsb) / 65536.0
 
 def close(signal, frame):
     GPIO.output(LED1, 0)
@@ -103,42 +69,60 @@ if __name__ == '__main__':
         obj_bh1750 = BH1750()
         obj_htu21d = HTU21D()
 
+        # Store initial values
+        light_intensity = obj_bh1750.light()
+        temp = obj_htu21d.temperature()
+        humidity = obj_htu21d.humidity()
+        adc_0 = get_adc(0)
+        moisture1 = round(valmap(adc_0, 5, 3.5, 0, 100), 0)
+
+        # Print initial values
+        print(f'Light Intensity: {light_intensity} Lux')
+        print(f'Temperature: {temp:.2f}°C, Humidity: {humidity:.0f}%')
+        print(f'Soil Moisture Sensor: {moisture1}%')
+        print('\n')
+
         while True:
             # Read light intensity
-            light_intensity = obj_bh1750.light()
-            print(f'Light Intensity: {light_intensity} Lux')
-
+            current_light_intensity = obj_bh1750.light()
             # Read temperature and humidity
-            temp = obj_htu21d.temperature()
-            humidity = obj_htu21d.humidity()
-            print(f'Temperature: {temp:.2f}°C, Humidity: {humidity:.0f}%')
-
+            current_temp = obj_htu21d.temperature()
+            current_humidity = obj_htu21d.humidity()
             # Read soil moisture
-            adc_0 = get_adc(0)
-            adc_1 = get_adc(1)
-            sensor1 = round(adc_0, 2)
-            if sensor1 < 0.5:
-                moisture1 = 0
-            else:
-                moisture1 = round(valmap(sensor1, 5, 3.5, 0, 100), 0)
+            current_adc_0 = get_adc(0)
+            current_moisture1 = round(valmap(current_adc_0, 5, 3.5, 0, 100), 0)
 
-            sensor2 = round(adc_1, 2)
-            if sensor2 < 0.5:
-                moisture2 = 0
-            else:
-                moisture2 = round(valmap(sensor2, 5, 3.5, 0, 100), 0)
+            # Check for differences
+            temp_difference = abs(current_temp - temp)
+            humidity_difference = abs(current_humidity - humidity)
+            light_difference = abs(float(current_light_intensity) - float(light_intensity))
+            moisture1_difference = abs(current_moisture1 - moisture1)
 
-            print(f"Soil Moisture Sensor 1: {moisture1}%, Soil Moisture Sensor 2: {moisture2}%")
-            print('\n')
+            # Print values if differences are detected
+            if (
+                temp_difference >= 1 or humidity_difference >= 10 or
+                light_difference >= 50 or moisture1_difference >= 10
+            ):
+                print(f'Light Intensity: {current_light_intensity} Lux')
+                print(f'Temperature: {current_temp:.2f}°C, Humidity: {current_humidity:.0f}%')
+                print(f'Soil Moisture Sensor: {current_moisture1}%')
+                print('\n')
+
+                # Update initial values
+                light_intensity = current_light_intensity
+                temp = current_temp
+                humidity = current_humidity
+                moisture1 = current_moisture1
+
             # Control LEDs based on moisture levels
-            if moisture1 < 40 or moisture2 < 40:
+            if current_moisture1 < 40:
                 GPIO.output(LED1, 1)
                 GPIO.output(LED2, 0)
             else:
                 GPIO.output(LED1, 0)
                 GPIO.output(LED2, 1)
 
-            time.sleep(2.5)
+            time.sleep(0.5)
 
     except FileNotFoundError:
         print('ERROR: Please enable I2C.')
