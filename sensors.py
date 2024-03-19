@@ -1,22 +1,15 @@
 import signal
 import sys
 import time
-import spidev
 import RPi.GPIO as GPIO
-import smbus
 from bh1750 import BH1750
 from htu21d import HTU21D
+from soil_moisture_sensor import SoilMoistureSensor
 
 # Pin 15 on Raspberry Pi corresponds to GPIO 22
 LED1 = 15
 # Pin 16 on Raspberry Pi corresponds to GPIO 23
 LED2 = 16
-
-spi_ch = 0
-
-# Enable SPI
-spi = spidev.SpiDev(0, spi_ch)
-spi.max_speed_hz = 1200000
 
 # to use Raspberry Pi board pin numbers
 GPIO.setmode(GPIO.BOARD)
@@ -33,48 +26,17 @@ def close(signal, frame):
 
 signal.signal(signal.SIGINT, close)
 
-def valmap(value, istart, istop, ostart, ostop):
-    value = ostart + (ostop - ostart) * ((value - istart) / (istop - istart))
-    if value > ostop:
-        value = ostop
-    return value
-
-def get_adc(channel):
-    # Make sure ADC channel is 0 or 1
-    if channel != 0:
-        channel = 1
-
-    # Construct SPI message
-    msg = 0b11
-    msg = ((msg << 1) + channel) << 5
-    msg = [msg, 0b00000000]
-    reply = spi.xfer2(msg)
-
-    # Construct single integer out of the reply (2 bytes)
-    adc = 0
-    for n in reply:
-        adc = (adc << 8) + n
-
-    # Last bit (0) is not part of ADC value, shift to remove it
-    adc = adc >> 1
-
-    # Calculate voltage from ADC value
-    # considering the soil moisture sensor is working at 5V
-    voltage = (5 * adc) / 1024
-
-    return voltage
-
 if __name__ == '__main__':
     try:
         obj_bh1750 = BH1750()
         obj_htu21d = HTU21D()
+        moisture_sensor = SoilMoistureSensor(spi_channel=0)
 
         # Store initial values
         light_intensity = obj_bh1750.light()
         temp = obj_htu21d.temperature()
         humidity = obj_htu21d.humidity()
-        adc_0 = get_adc(0)
-        moisture1 = round(valmap(adc_0, 5, 3.5, 0, 100), 0)
+        moisture1 = round(moisture_sensor.valmap(moisture_sensor.get_adc(0), 5, 3.5, 0, 100), 0)
 
         # Print initial values
         print(f'Light Intensity: {light_intensity} Lux')
@@ -89,8 +51,8 @@ if __name__ == '__main__':
             current_temp = obj_htu21d.temperature()
             current_humidity = obj_htu21d.humidity()
             # Read soil moisture
-            current_adc_0 = get_adc(0)
-            current_moisture1 = round(valmap(current_adc_0, 5, 3.5, 0, 100), 0)
+            current_adc_value = moisture_sensor.get_adc(0)
+            current_moisture1 = round(moisture_sensor.valmap(current_adc_value, 5, 3.5, 0, 100), 0)
 
             # Check for differences
             temp_difference = abs(current_temp - temp)
@@ -99,19 +61,20 @@ if __name__ == '__main__':
             moisture1_difference = abs(current_moisture1 - moisture1)
 
             # Print values if differences are detected
-            if (
-                temp_difference >= 1 or humidity_difference >= 10 or
-                light_difference >= 50 or moisture1_difference >= 10
-            ):
-                print(f'Light Intensity: {current_light_intensity} Lux')
-                print(f'Temperature: {current_temp:.2f}°C, Humidity: {current_humidity:.0f}%')
-                print(f'Soil Moisture Sensor: {current_moisture1}%')
-                print('\n')
-
-                # Update initial values
-                light_intensity = current_light_intensity
+            if temp_difference >= 1:
+                print(f'Temperature: {current_temp:.2f}°C')
                 temp = current_temp
+
+            if humidity_difference >= 10:
+                print(f'Humidity: {current_humidity:.0f}%')
                 humidity = current_humidity
+
+            if light_difference >= 100:
+                print(f'Light Intensity: {current_light_intensity} Lux')
+                light_intensity = current_light_intensity
+
+            if moisture1_difference >= 10:
+                print(f'Soil Moisture Sensor: {current_moisture1}%')
                 moisture1 = current_moisture1
 
             # Control LEDs based on moisture levels
