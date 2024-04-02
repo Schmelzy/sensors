@@ -26,6 +26,11 @@ def close(signal, frame):
 
 signal.signal(signal.SIGINT, close)
 
+def read_soil_moisture(moisture_sensor):
+    current_adc_value = moisture_sensor.get_adc(0)
+    current_moisture = round(moisture_sensor.valmap(float(current_adc_value), 5, 3.5, 0, 100), 0)
+    return current_moisture
+
 if __name__ == '__main__':
     try:
         obj_bh1750 = BH1750()
@@ -41,20 +46,16 @@ if __name__ == '__main__':
         light_intensity = float(obj_bh1750.light())
         temp = float(obj_htu21d.temperature())
         humidity = float(obj_htu21d.humidity())
-        current_adc_value = moisture_sensor.get_adc(0)
-        moisture1 = round(moisture_sensor.valmap(float(current_adc_value), 5, 3.5, 0, 100), 0)
+        moisture = read_soil_moisture(moisture_sensor)
 
         # Print initial values
         print(f'Light Intensity: {light_intensity} Lux')
         print(f'Temperature: {temp:.2f}°C, Humidity: {humidity:.0f}%')
-        print(f'Soil Moisture Sensor: {moisture1}%')
+        print(f'Soil Moisture Sensor: {moisture}%')
         print('\n')
 
         # Get initial time
         last_bh1750_measurement_time = last_htu21d_measurement_time = last_moisture_measurement_time = time.time()
-
-        # Define current_moisture1 before the while loop
-        current_moisture1 = moisture1
 
         while True:
             current_time = time.time()
@@ -83,19 +84,15 @@ if __name__ == '__main__':
 
             # Read soil moisture
             if current_time - last_moisture_measurement_time >= MOISTURE_SENSOR_INTERVAL:
-                current_adc_value = moisture_sensor.get_adc(0)
-                current_moisture1 = round(moisture_sensor.valmap(float(current_adc_value), 5, 3.5, 0, 100), 0)
+                current_moisture = read_soil_moisture(moisture_sensor)
                 last_moisture_measurement_time = current_time
                 
-                # Ensure moisture value is within the range of 0 to 100
-                current_moisture1 = max(0, min(100, current_moisture1))
-                
-                if abs(current_moisture1 - moisture1) >= 10:
-                    print(f'Soil Moisture Sensor: {current_moisture1}%')
-                    moisture1 = current_moisture1
+                if abs(current_moisture - moisture) >= 10:
+                    print(f'Soil Moisture Sensor: {current_moisture}%')
+                    moisture = current_moisture
 
             # Control LEDs based on moisture levels
-            if current_moisture1 < 40:
+            if moisture < 40:
                 GPIO.output(LED1, 1)
                 GPIO.output(LED2, 0)
             else:
