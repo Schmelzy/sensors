@@ -30,6 +30,8 @@ class SoilMoistureSensor:
 
         return voltage
 
-    @staticmethod
-    def valmap(value, istart, istop, ostart, ostop):
-        return ostart + (ostop - ostart) * ((value - istart) / (istop - istart))
+    def valmap(self, value, istart, istop, ostart, ostop):
+        value = ostart + (ostop - ostart) * ((value - istart) / (istop - istart))
+        if value > ostop:
+           value = ostop
+        return value
