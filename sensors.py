@@ -1,3 +1,4 @@
+import paho.mqtt.client as mqtt
 import signal
 import sys
 import time
@@ -11,6 +12,9 @@ LED1 = 15
 # Pin 16 on Raspberry Pi corresponds to GPIO 23
 LED2 = 16
 
+mqttc = None
+msg_info = None
+
 # to use Raspberry Pi board pin numbers
 GPIO.setmode(GPIO.BOARD)
 GPIO.setwarnings(False)
@@ -22,6 +26,9 @@ GPIO.setup(LED2, GPIO.OUT)
 def close(signal, frame):
     GPIO.output(LED1, 0)
     GPIO.output(LED2, 0)
+    if mqttc != None:
+        mqttc.disconnect()
+        mqttc.loop_stop()
     sys.exit(0)
 
 signal.signal(signal.SIGINT, close)
@@ -31,8 +38,22 @@ def read_soil_moisture(moisture_sensor):
     current_moisture = round(moisture_sensor.valmap(float(current_adc_value), 5, 3.5, 0, 100), 0)
     return current_moisture
 
+def on_publish(client, userdata, mid, reason_code, properties):
+    # reason_code and properties will only be present in MQTTv5. It's always unset in MQTTv3
+    try:
+        userdata.remove(mid)
+    except KeyError:
+        print("on_publish() is called with a mid not present in unacked_publish")
+
 if __name__ == '__main__':
     try:
+        unacked_publish = set()
+        mqttc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        mqttc.on_publish = on_publish
+        mqttc.user_data_set(unacked_publish)
+        mqttc.connect("localhost", 1883, 60)
+        mqttc.loop_start()
+
         obj_bh1750 = BH1750()
         obj_htu21d = HTU21D()
         moisture_sensor = SoilMoistureSensor(spi_channel=0)
@@ -68,6 +89,9 @@ if __name__ == '__main__':
                 if abs(current_light_intensity - light_intensity) >= 100:
                     print(f'Light Intensity: {current_light_intensity} Lux')
                     light_intensity = current_light_intensity
+                    # Our application produce some messages
+                    msg_info = mqttc.publish("tugay/light", current_light_intensity, qos=1)
+                    unacked_publish.add(msg_info.mid)
 
             # Read temperature and humidity
             if current_time - last_htu21d_measurement_time >= HTU21D_INTERVAL:
@@ -99,6 +123,14 @@ if __name__ == '__main__':
                 GPIO.output(LED1, 0)
                 GPIO.output(LED2, 1)
 
+            # Wait for all message to be published
+            while len(unacked_publish):
+                time.sleep(0.1)
+
+            # Due to race-condition described above, the following way to wait for all publish is safer
+            if msg_info != None:
+                  msg_info.wait_for_publish()
+
     except FileNotFoundError:
         print('ERROR: Please enable I2C.')
     except OSError:
@@ -108,3 +140,6 @@ if __name__ == '__main__':
 
     finally:
         GPIO.cleanup()
+        if mqttc != None:
+            mqttc.disconnect()
+            mqttc.loop_stop()
