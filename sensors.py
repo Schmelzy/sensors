@@ -15,6 +15,8 @@ LED2 = 16
 mqttc = None
 msg_light = None
 msg_temp = None
+msg_humidity = None
+msg_soil_moisture = None
 
 # to use Raspberry Pi board pin numbers
 GPIO.setmode(GPIO.BOARD)
@@ -108,6 +110,8 @@ if __name__ == '__main__':
                 if abs(current_humidity - humidity) >= 10:
                     print(f'Humidity: {current_humidity:.0f}%')
                     humidity = current_humidity
+                    msg_humidity = mqttc.publish("tugay/humidity", f'{current_humidity:.0f}%', qos=1)
+                    unacked_publish.add(msg_humidity.mid)
 
             # Read soil moisture
             if current_time - last_moisture_measurement_time >= MOISTURE_SENSOR_INTERVAL:
@@ -117,6 +121,8 @@ if __name__ == '__main__':
                 if abs(current_moisture - moisture) >= 10:
                     print(f'Soil Moisture Sensor: {current_moisture}%')
                     moisture = current_moisture
+                    msg_soil_moisture = mqttc.publish("tugay/soil_moisture", f'{current_moisture}%', qos=1)
+                    unacked_publish.add(msg_soil_moisture.mid)
 
             # Control LEDs based on moisture levels
             if moisture < 40:
@@ -135,7 +141,11 @@ if __name__ == '__main__':
                   msg_light.wait_for_publish()
             if msg_temp != None:
                   msg_temp.wait_for_publish()
-
+            if msg_humidity != None:
+                  msg_humidity.wait_for_publish()
+            if msg_soil_moisture != None:
+                  msg_soil_moisture.wait_for_publish()
+                  
     except FileNotFoundError:
         print('ERROR: Please enable I2C.')
     except OSError:
