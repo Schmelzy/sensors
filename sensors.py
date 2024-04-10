@@ -13,7 +13,8 @@ LED1 = 15
 LED2 = 16
 
 mqttc = None
-msg_info = None
+msg_light = None
+msg_temp = None
 
 # to use Raspberry Pi board pin numbers
 GPIO.setmode(GPIO.BOARD)
@@ -90,8 +91,8 @@ if __name__ == '__main__':
                     print(f'Light Intensity: {current_light_intensity} Lux')
                     light_intensity = current_light_intensity
                     # Our application produce some messages
-                    msg_info = mqttc.publish("tugay/light", current_light_intensity, qos=1)
-                    unacked_publish.add(msg_info.mid)
+                    msg_light = mqttc.publish("tugay/light", current_light_intensity, qos=1)
+                    unacked_publish.add(msg_light.mid)
 
             # Read temperature and humidity
             if current_time - last_htu21d_measurement_time >= HTU21D_INTERVAL:
@@ -101,6 +102,8 @@ if __name__ == '__main__':
                 if abs(current_temp - temp) >= 1:
                     print(f'Temperature: {current_temp:.2f}°C')
                     temp = current_temp
+                    msg_temp = mqttc.publish("tugay/temperature", f'{current_temp:.2f}', qos=1)
+                    unacked_publish.add(msg_temp.mid)
 
                 if abs(current_humidity - humidity) >= 10:
                     print(f'Humidity: {current_humidity:.0f}%')
@@ -128,8 +131,10 @@ if __name__ == '__main__':
                 time.sleep(0.1)
 
             # Due to race-condition described above, the following way to wait for all publish is safer
-            if msg_info != None:
-                  msg_info.wait_for_publish()
+            if msg_light != None:
+                  msg_light.wait_for_publish()
+            if msg_temp != None:
+                  msg_temp.wait_for_publish()
 
     except FileNotFoundError:
         print('ERROR: Please enable I2C.')
