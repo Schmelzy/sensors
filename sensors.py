@@ -36,10 +36,52 @@ def close(signal, frame):
 
 signal.signal(signal.SIGINT, close)
 
-def read_soil_moisture(moisture_sensor):
+def read_and_publish_light_intensity(obj_bh1750, current_time, last_bh1750_measurement_time, light_intensity, mqttc, unacked_publish):
+    if current_time - last_bh1750_measurement_time >= BH1750_INTERVAL:
+        current_light_intensity = float(obj_bh1750.light())
+        
+        if abs(current_light_intensity - light_intensity) >= 100:
+            print(f'Light Intensity: {current_light_intensity} Lux')
+            light_intensity = current_light_intensity
+            msg_light = mqttc.publish("tugay/light", current_light_intensity, qos=1)
+            unacked_publish.add(msg_light.mid)
+        last_bh1750_measurement_time = current_time  # Update last measurement time    
+    return light_intensity, last_bh1750_measurement_time
+
+def read_and_publish_temperature_and_humidity(obj_htu21d, current_time, last_htu21d_measurement_time, temp, humidity, mqttc, unacked_publish):  
+    if current_time - last_htu21d_measurement_time >= HTU21D_INTERVAL:
+        current_temp, current_humidity = float(obj_htu21d.temperature()), float(obj_htu21d.humidity())
+        
+        if abs(current_temp - temp) >= 1:
+            print(f'Temperature: {current_temp:.2f}°C')
+            temp = current_temp
+            msg_temp = mqttc.publish("tugay/temperature", f'{current_temp:.2f}', qos=1)
+            unacked_publish.add(msg_temp.mid)
+
+        if abs(current_humidity - humidity) >= 10:          
+            print(f'Humidity: {current_humidity:.0f}%')
+            humidity = current_humidity
+            msg_humidity = mqttc.publish("tugay/humidity", f'{current_humidity:.0f}%', qos=1)
+            unacked_publish.add(msg_humidity.mid)
+        last_htu21d_measurement_time = current_time  # Update last measurement time   
+    return temp, humidity, last_htu21d_measurement_time
+
+def read_soil_moisture_sensor(moisture_sensor):
     current_adc_value = moisture_sensor.get_adc(0)
     current_moisture = round(moisture_sensor.valmap(float(current_adc_value), 5, 3.5, 0, 100), 0)
     return current_moisture
+
+def read_and_publish_soil_moisture(moisture_sensor, current_time, last_moisture_measurement_time, moisture, mqttc, unacked_publish):
+    if current_time - last_moisture_measurement_time >= MOISTURE_SENSOR_INTERVAL:
+        current_moisture = read_soil_moisture_sensor(moisture_sensor)
+        
+        if abs(current_moisture - moisture) >= 10:           
+            print(f'Soil Moisture Sensor: {current_moisture}%')
+            moisture = current_moisture
+            msg_soil_moisture = mqttc.publish("tugay/soil_moisture", f'{current_moisture}%', qos=1)
+            unacked_publish.add(msg_soil_moisture.mid)
+        last_moisture_measurement_time = current_time  # Update last measurement time
+    return moisture, last_moisture_measurement_time
 
 def on_publish(client, userdata, mid, reason_code, properties):
     # reason_code and properties will only be present in MQTTv5. It's always unset in MQTTv3
@@ -70,7 +112,7 @@ if __name__ == '__main__':
         light_intensity = float(obj_bh1750.light())
         temp = float(obj_htu21d.temperature())
         humidity = float(obj_htu21d.humidity())
-        moisture = read_soil_moisture(moisture_sensor)
+        moisture = read_soil_moisture_sensor(moisture_sensor)
 
         # Print initial values
         print(f'Light Intensity: {light_intensity} Lux')
@@ -84,45 +126,12 @@ if __name__ == '__main__':
         while True:
             current_time = time.time()
 
-            # Read light intensity
-            if current_time - last_bh1750_measurement_time >= BH1750_INTERVAL:
-                current_light_intensity = float(obj_bh1750.light())
-                last_bh1750_measurement_time = current_time
-                
-                if abs(current_light_intensity - light_intensity) >= 100:
-                    print(f'Light Intensity: {current_light_intensity} Lux')
-                    light_intensity = current_light_intensity
-                    # Our application produce some messages
-                    msg_light = mqttc.publish("tugay/light", current_light_intensity, qos=1)
-                    unacked_publish.add(msg_light.mid)
-
-            # Read temperature and humidity
-            if current_time - last_htu21d_measurement_time >= HTU21D_INTERVAL:
-                current_temp, current_humidity = float(obj_htu21d.temperature()), float(obj_htu21d.humidity())
-                last_htu21d_measurement_time = current_time
-                
-                if abs(current_temp - temp) >= 1:
-                    print(f'Temperature: {current_temp:.2f}°C')
-                    temp = current_temp
-                    msg_temp = mqttc.publish("tugay/temperature", f'{current_temp:.2f}', qos=1)
-                    unacked_publish.add(msg_temp.mid)
-
-                if abs(current_humidity - humidity) >= 10:
-                    print(f'Humidity: {current_humidity:.0f}%')
-                    humidity = current_humidity
-                    msg_humidity = mqttc.publish("tugay/humidity", f'{current_humidity:.0f}%', qos=1)
-                    unacked_publish.add(msg_humidity.mid)
-
-            # Read soil moisture
-            if current_time - last_moisture_measurement_time >= MOISTURE_SENSOR_INTERVAL:
-                current_moisture = read_soil_moisture(moisture_sensor)
-                last_moisture_measurement_time = current_time
-                
-                if abs(current_moisture - moisture) >= 10:
-                    print(f'Soil Moisture Sensor: {current_moisture}%')
-                    moisture = current_moisture
-                    msg_soil_moisture = mqttc.publish("tugay/soil_moisture", f'{current_moisture}%', qos=1)
-                    unacked_publish.add(msg_soil_moisture.mid)
+            # Read and publish light intensity
+            light_intensity, last_bh1750_measurement_time = read_and_publish_light_intensity(obj_bh1750, current_time, last_bh1750_measurement_time, light_intensity, mqttc, unacked_publish)
+            # Read and publish temperature and humidity
+            temp, humidity, last_htu21d_measurement_time = read_and_publish_temperature_and_humidity(obj_htu21d, current_time, last_htu21d_measurement_time, temp, humidity, mqttc, unacked_publish)
+            # Read and publish soil moisture
+            moisture, last_moisture_measurement_time = read_and_publish_soil_moisture(moisture_sensor, current_time, last_moisture_measurement_time, moisture, mqttc, unacked_publish)
 
             # Control LEDs based on moisture levels
             if moisture < 40:
