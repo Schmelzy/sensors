@@ -40,7 +40,7 @@ def read_and_publish_light_intensity(obj_bh1750, current_time, last_bh1750_measu
         if abs(current_light_intensity - light_intensity) >= 100:
             print(f'Light Intensity: {current_light_intensity} Lux')
             light_intensity = current_light_intensity
-            msg_light = mqttc.publish("tugay/light", current_light_intensity, qos=1)
+            msg_light = mqttc.publish("tugay/light", f'{current_light_intensity} Lux', qos=1)
             unacked_publish.add(msg_light.mid)
 
         last_bh1750_measurement_time = current_time  # Update last measurement time    
@@ -53,7 +53,7 @@ def read_and_publish_temperature_and_humidity(obj_htu21d, current_time, last_htu
         if abs(current_temp - temp) >= 1:
             print(f'Temperature: {current_temp:.2f}°C')
             temp = current_temp
-            msg_temp = mqttc.publish("tugay/temperature", f'{current_temp:.2f}', qos=1)
+            msg_temp = mqttc.publish("tugay/temperature", f'{current_temp:.2f}°C', qos=1)
             unacked_publish.add(msg_temp.mid)
 
         if abs(current_humidity - humidity) >= 10:          
