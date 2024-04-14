@@ -13,10 +13,7 @@ LED1 = 15
 LED2 = 16
 
 mqttc = None
-msg_light = None
-msg_temp = None
-msg_humidity = None
-msg_soil_moisture = None
+msg_light = msg_temp = msg_humidity = msg_soil_moisture = None
 
 # to use Raspberry Pi board pin numbers
 GPIO.setmode(GPIO.BOARD)
@@ -45,6 +42,7 @@ def read_and_publish_light_intensity(obj_bh1750, current_time, last_bh1750_measu
             light_intensity = current_light_intensity
             msg_light = mqttc.publish("tugay/light", current_light_intensity, qos=1)
             unacked_publish.add(msg_light.mid)
+
         last_bh1750_measurement_time = current_time  # Update last measurement time    
     return light_intensity, last_bh1750_measurement_time
 
@@ -63,6 +61,7 @@ def read_and_publish_temperature_and_humidity(obj_htu21d, current_time, last_htu
             humidity = current_humidity
             msg_humidity = mqttc.publish("tugay/humidity", f'{current_humidity:.0f}%', qos=1)
             unacked_publish.add(msg_humidity.mid)
+
         last_htu21d_measurement_time = current_time  # Update last measurement time   
     return temp, humidity, last_htu21d_measurement_time
 
@@ -80,6 +79,7 @@ def read_and_publish_soil_moisture(moisture_sensor, current_time, last_moisture_
             moisture = current_moisture
             msg_soil_moisture = mqttc.publish("tugay/soil_moisture", f'{current_moisture}%', qos=1)
             unacked_publish.add(msg_soil_moisture.mid)
+
         last_moisture_measurement_time = current_time  # Update last measurement time
     return moisture, last_moisture_measurement_time
 
@@ -146,14 +146,11 @@ if __name__ == '__main__':
                 time.sleep(0.1)
 
             # Due to race-condition described above, the following way to wait for all publish is safer
-            if msg_light != None:
-                  msg_light.wait_for_publish()
-            if msg_temp != None:
-                  msg_temp.wait_for_publish()
-            if msg_humidity != None:
-                  msg_humidity.wait_for_publish()
-            if msg_soil_moisture != None:
-                  msg_soil_moisture.wait_for_publish()
+            messages = [msg_light, msg_temp, msg_humidity, msg_soil_moisture]
+
+            for msg in messages:
+                if msg is not None:
+                    msg.wait_for_publish()
                   
     except FileNotFoundError:
         print('ERROR: Please enable I2C.')
