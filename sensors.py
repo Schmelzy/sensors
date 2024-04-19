@@ -38,9 +38,9 @@ def read_and_publish_light_intensity(obj_bh1750, current_time, last_bh1750_measu
         current_light_intensity = float(obj_bh1750.light())
         
         if abs(current_light_intensity - light_intensity) >= 100:
-            print(f'Light Intensity: {current_light_intensity} Lux')
+            print(f'Light Intensity: {current_light_intensity:.0f} Lux')
             light_intensity = current_light_intensity
-            msg_light = mqttc.publish("tugay/light", f'{current_light_intensity} Lux', qos=1)
+            msg_light = mqttc.publish("tugay/light", f'{current_light_intensity:.0f} Lux', qos=1)
             unacked_publish.add(msg_light.mid)
 
         last_bh1750_measurement_time = current_time  # Update last measurement time    
@@ -75,9 +75,9 @@ def read_and_publish_soil_moisture(moisture_sensor, current_time, last_moisture_
         current_moisture = read_soil_moisture_sensor(moisture_sensor)
         
         if abs(current_moisture - moisture) >= 10:           
-            print(f'Soil Moisture Sensor: {current_moisture}%')
+            print(f'Soil Moisture Sensor: {current_moisture:.0f}%')
             moisture = current_moisture
-            msg_soil_moisture = mqttc.publish("tugay/soil_moisture", f'{current_moisture}%', qos=1)
+            msg_soil_moisture = mqttc.publish("tugay/soil_moisture", f'{current_moisture:.0f}%', qos=1)
             unacked_publish.add(msg_soil_moisture.mid)
 
         last_moisture_measurement_time = current_time  # Update last measurement time
@@ -114,10 +114,20 @@ if __name__ == '__main__':
         humidity = float(obj_htu21d.humidity())
         moisture = read_soil_moisture_sensor(moisture_sensor)
 
+        # Publish initial values as MQTT messages
+        msg_light = mqttc.publish("tugay/light", f'{light_intensity:.0f} Lux', qos=1)
+        unacked_publish.add(msg_light.mid)
+        msg_temp = mqttc.publish("tugay/temperature", f'{temp:.2f}°C', qos=1)
+        unacked_publish.add(msg_temp.mid)
+        msg_humidity = mqttc.publish("tugay/humidity", f'{humidity:.0f}%', qos=1)
+        unacked_publish.add(msg_humidity.mid)
+        msg_soil_moisture = mqttc.publish("tugay/soil_moisture", f'{moisture:.0f}%', qos=1)
+        unacked_publish.add(msg_soil_moisture.mid)
+
         # Print initial values
-        print(f'Light Intensity: {light_intensity} Lux')
+        print(f'Light Intensity: {light_intensity:.0f} Lux')
         print(f'Temperature: {temp:.2f}°C, Humidity: {humidity:.0f}%')
-        print(f'Soil Moisture Sensor: {moisture}%')
+        print(f'Soil Moisture Sensor: {moisture:.0f}%')
         print('\n')
 
         # Get initial time
@@ -164,3 +174,4 @@ if __name__ == '__main__':
         if mqttc != None:
             mqttc.disconnect()
             mqttc.loop_stop()
+
