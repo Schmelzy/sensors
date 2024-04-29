@@ -37,10 +37,10 @@ def read_and_publish_light_intensity(obj_bh1750, current_time, last_bh1750_measu
     if current_time - last_bh1750_measurement_time >= BH1750_INTERVAL:
         current_light_intensity = float(obj_bh1750.light())
         
-        if abs(current_light_intensity - light_intensity) >= 100:
+        if abs(current_light_intensity - light_intensity) >= 50:
             print(f'Light Intensity: {current_light_intensity:.0f} Lux')
             light_intensity = current_light_intensity
-            msg_light = mqttc.publish("tugay/light", f'{current_light_intensity:.0f} Lux', qos=1, retain = True)
+            msg_light = mqttc.publish("tugay/light", f'{current_light_intensity:.0f} Lux', qos=1, retain=True)
             unacked_publish.add(msg_light.mid)
 
         last_bh1750_measurement_time = current_time  # Update last measurement time    
@@ -50,16 +50,16 @@ def read_and_publish_temperature_and_humidity(obj_htu21d, current_time, last_htu
     if current_time - last_htu21d_measurement_time >= HTU21D_INTERVAL:
         current_temp, current_humidity = float(obj_htu21d.temperature()), float(obj_htu21d.humidity())
         
-        if abs(current_temp - temp) >= 1:
+        if abs(current_temp - temp) >= 0.5:
             print(f'Temperature: {current_temp:.2f}°C')
             temp = current_temp
-            msg_temp = mqttc.publish("tugay/temperature", f'{current_temp:.2f}°C', qos=1, retain = True)
+            msg_temp = mqttc.publish("tugay/temperature", f'{current_temp:.2f}°C', qos=1, retain=True)
             unacked_publish.add(msg_temp.mid)
 
-        if abs(current_humidity - humidity) >= 10:          
+        if abs(current_humidity - humidity) >= 5:          
             print(f'Humidity: {current_humidity:.0f}%')
             humidity = current_humidity
-            msg_humidity = mqttc.publish("tugay/humidity", f'{current_humidity:.0f}%', qos=1, retain = True)
+            msg_humidity = mqttc.publish("tugay/humidity", f'{current_humidity:.0f}%', qos=1, retain=True)
             unacked_publish.add(msg_humidity.mid)
 
         last_htu21d_measurement_time = current_time  # Update last measurement time   
@@ -74,10 +74,10 @@ def read_and_publish_soil_moisture(moisture_sensor, current_time, last_moisture_
     if current_time - last_moisture_measurement_time >= MOISTURE_SENSOR_INTERVAL:
         current_moisture = read_soil_moisture_sensor(moisture_sensor)
         
-        if abs(current_moisture - moisture) >= 10:           
+        if abs(current_moisture - moisture) >= 5:           
             print(f'Soil Moisture Sensor: {current_moisture:.0f}%')
             moisture = current_moisture
-            msg_soil_moisture = mqttc.publish("tugay/soil_moisture", f'{current_moisture:.0f}%', qos=1, retain = True)
+            msg_soil_moisture = mqttc.publish("tugay/soil_moisture", f'{current_moisture:.0f}%', qos=1, retain=True)
             unacked_publish.add(msg_soil_moisture.mid)
 
         last_moisture_measurement_time = current_time  # Update last measurement time
@@ -115,13 +115,13 @@ if __name__ == '__main__':
         moisture = read_soil_moisture_sensor(moisture_sensor)
 
         # Publish initial values as MQTT messages
-        msg_light = mqttc.publish("tugay/light", f'{light_intensity:.0f} Lux', qos=1, retain = True)
+        msg_light = mqttc.publish("tugay/light", f'{light_intensity:.0f} Lux', qos=1, retain=True)
         unacked_publish.add(msg_light.mid)
-        msg_temp = mqttc.publish("tugay/temperature", f'{temp:.2f}°C', qos=1, retain = True)
+        msg_temp = mqttc.publish("tugay/temperature", f'{temp:.2f}°C', qos=1, retain=True)
         unacked_publish.add(msg_temp.mid)
-        msg_humidity = mqttc.publish("tugay/humidity", f'{humidity:.0f}%', qos=1, retain = True)
+        msg_humidity = mqttc.publish("tugay/humidity", f'{humidity:.0f}%', qos=1, retain=True)
         unacked_publish.add(msg_humidity.mid)
-        msg_soil_moisture = mqttc.publish("tugay/soil_moisture", f'{moisture:.0f}%', qos=1, retain = True)
+        msg_soil_moisture = mqttc.publish("tugay/soil_moisture", f'{moisture:.0f}%', qos=1, retain=True)
         unacked_publish.add(msg_soil_moisture.mid)
 
         # Print initial values
@@ -133,15 +133,43 @@ if __name__ == '__main__':
         # Get initial time
         last_bh1750_measurement_time = last_htu21d_measurement_time = last_moisture_measurement_time = time.time()
 
+        # Define flags to track error status for each sensor
+        bh1750_error_flag = False
+        htu21d_error_flag = False
+        moisture_sensor_error_flag = False
+
         while True:
             current_time = time.time()
 
-            # Read and publish light intensity
-            light_intensity, last_bh1750_measurement_time = read_and_publish_light_intensity(obj_bh1750, current_time, last_bh1750_measurement_time, light_intensity, mqttc, unacked_publish)
-            # Read and publish temperature and humidity
-            temp, humidity, last_htu21d_measurement_time = read_and_publish_temperature_and_humidity(obj_htu21d, current_time, last_htu21d_measurement_time, temp, humidity, mqttc, unacked_publish)
-            # Read and publish soil moisture
-            moisture, last_moisture_measurement_time = read_and_publish_soil_moisture(moisture_sensor, current_time, last_moisture_measurement_time, moisture, mqttc, unacked_publish)
+            try:
+                # Read and publish light intensity
+                light_intensity, last_bh1750_measurement_time = read_and_publish_light_intensity(obj_bh1750, current_time, last_bh1750_measurement_time, light_intensity, mqttc, unacked_publish)
+                bh1750_error_flag = False
+            except OSError:
+                if not bh1750_error_flag:
+                    print(f'ERROR: BH1750 not found. Please check sensor wiring.')
+                    bh1750_error_flag = True
+                continue
+
+            try:
+                # Read and publish temperature and humidity
+                temp, humidity, last_htu21d_measurement_time = read_and_publish_temperature_and_humidity(obj_htu21d, current_time, last_htu21d_measurement_time, temp, humidity, mqttc, unacked_publish)
+                htu21d_error_flag = False
+            except OSError:
+                if not htu21d_error_flag:
+                    print(f'ERROR: HTU21D not found. Please check sensor wiring.')
+                    htu21d_error_flag = True
+                continue
+
+            try:
+                # Read and publish soil moisture
+                moisture, last_moisture_measurement_time = read_and_publish_soil_moisture(moisture_sensor, current_time, last_moisture_measurement_time, moisture, mqttc, unacked_publish)
+                moisture_sensor_error_flag = False
+            except OSError:
+                if not moisture_sensor_error_flag:
+                    print(f'ERROR: Soil Moisture Sensor not found. Please check sensor wiring.')
+                    moisture_sensor_error_flag = True
+                continue
 
             # Control LEDs based on moisture levels
             if moisture < 40:
@@ -164,8 +192,6 @@ if __name__ == '__main__':
                   
     except FileNotFoundError:
         print('ERROR: Please enable I2C.')
-    except OSError:
-        print('ERROR: I2C device not found. Please check sensor wiring.')
     except Exception as e:
         print(f'ERROR: {e}')
 
